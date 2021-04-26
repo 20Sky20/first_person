@@ -1,5 +1,5 @@
 import * as THREE from './pkg/three.module.js'; 
-import { Vector2 } from './Three/pkg/three.module.js';
+import { GLTFLoader } from './pkg/GLTFLoader.js';
 
 window.addEventListener('DOMContentLoaded', DOMContentLoaded => {
 
@@ -8,13 +8,13 @@ window.addEventListener('DOMContentLoaded', DOMContentLoaded => {
     render.setClearColor ('#0ff');
     render.shadowMap.enabled = true;
     const scene = new THREE.Scene();
-    scene.fog = new THREE>FogExp2(0xFFFFFF, 0.1);
-    const camera = new THREE.PerspectiveCamera(75, render.donElement.clientWidth / render.donElement.clientHeight, 0.1, 1000); 
+    scene.fog = new THREE.FogExp2(0x00FFFF, 0.1);
+    const camera = new THREE.PerspectiveCamera(75, render.domElement.clientWidth / render.domElement.clientHeight, 0.1, 1000); 
     camera.position.z = 5;
     const resize = () => {
-        camera.aspect = render.donElement.clientWidth / render.donElement.clientHeight;
+        camera.aspect = render.domElement.clientWidth / render.domElement.clientHeight;
         camera.updateProjectionMatrix();
-        render.setSize(render.donElement.clientWidth * window.devicePixelRatio, render.donElement.clientHeight * window.devicePixelRatio, false);
+        render.setSize(render.domElement.clientWidth * window.devicePixelRatio, render.domElement.clientHeight * window.devicePixelRatio, false);
     }
     resize();
     window.addEventListener('resize', resize);
@@ -36,9 +36,25 @@ window.addEventListener('DOMContentLoaded', DOMContentLoaded => {
     });
     const ground = new THREE.Mesh(ground_geometry, ground_material);
     ground.rotation.x = -0.5 * Math.PI;
-    ground.position.y = -1;
+    ground.position.y = -0.5;
     ground.receiveShadow = true;
     scene.add(ground);
+
+    // CUSTOM MODEL
+    const gltf_loader = new GLTFLoader();
+    gltf_loader.load('../assets/chair.blend', gltf => {
+        while(gltf.scene.children.length){
+            scene.add(gltf.scene.children[0]);
+            console.log('SCENE', scene);
+            scene.traverse( node => {
+                if(node instanceof THREE.Mesh){
+                    node.castShadow = true;
+                }
+            });
+        }
+    }, undefined, error => {
+        console.log('CHAIR LOADING ERROR');
+    })
     
 
     // CUBE
@@ -49,6 +65,7 @@ window.addEventListener('DOMContentLoaded', DOMContentLoaded => {
         roughness: 0.75,
     });
     const cube = new THREE.Mesh(cube_geometry, cube_material);
+    cube.position.x = 3;
     cube.name = 'hittable';
     cube.castShadow = true;
     scene.add(cube);
@@ -63,7 +80,7 @@ window.addEventListener('DOMContentLoaded', DOMContentLoaded => {
     });
     window.addEventListener('keyup', keyup => {
         if(input.hasOwnProperty(keyup.key)){
-            input[keydown.key] = false;
+            input[keyup.key] = false;
         }
 
     });
@@ -79,22 +96,38 @@ window.addEventListener('DOMContentLoaded', DOMContentLoaded => {
         const speed = 0.1;
         camera.rotation.y += speed / Math.PI * (input.ArrowLeft - input.ArrowRight);
         const velocity = new THREE.Vector3(speed * (input.a - input.d), 0, speed * (input.s - input.w));
-        camera.position.x += velocity.x * -Math.cos(camera.rotation.y) + velocity.z * Math.sin(camera.rotation.y);
-        camera.position.z += velocity.x * Math.sin(camera.rotation.y) + velocity.z * Math.cos(camera.rotation.y);
+        let dx = velocity.x * -Math.cos(camera.rotation.y) + velocity.z * Math.sin(camera.rotation.y);
+        let dz = velocity.x * Math.sin(camera.rotation.y) + velocity.z * Math.cos(camera.rotation.y);
 
         // RAYCASTING
+        const player_raycast = new THREE.Raycaster();
+        const collision_check =  new THREE.Raycaster();
+        
+        // PROJECTILE
         cube.material.color.set(0x0000FF);
         if(input.f){
-            const player_raycast = new THREE.Raycaster();
-        player_raycast.camera.setFromCamera(new THREE>Vector2(0, 0), camera);
-        const intersects player_raycast.intersectObjects(scene.children);
-        intersects?.forEach(hit_object => {
+            player_raycast.setFromCamera(new THREE.Vector2(0, 0), camera);
+            const intersects = player_raycast.intersectObjects(scene.children, true);
+            intersects?.forEach(hit_object => {
             if(hit_object.object.name === 'hittable'){
                 hit_object.object.material.color.set(0xFF0000);
             }
-        });
-        
+            });
+
         }
+
+        // COLLISION CHECK
+        collision_check.set(new THREE.Vector3(camera.position.x + dx, camera.position.y, camera.position.z + dz), new THREE.Vector3(0, 0, -1));
+        const collisions =  collision_check.intersectObjects(scene.children, true);
+        if(collisions[0]?.distance < 0.1){
+            dx = 0;
+            dz = 0;
+        }
+
+
+        // APPLY MOVEMENT
+        camera.position.x += dx;
+        camera.position.z += dz;
 
         // RENDER
         render.render(scene, camera);
